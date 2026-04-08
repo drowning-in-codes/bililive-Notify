@@ -143,6 +143,12 @@ Notes
 - `[x]` 表示已完成并合入主分支
 - `[ ]` 表示待完成或进行中
 
+## 致谢 Acknowledgements
+
+感谢项目 [bilibili-API-collect](https://sessionhu.github.io/bilibili-API-collect/) 提供的 API 资料与帮助。
+
+Special thanks to [bilibili-API-collect](https://sessionhu.github.io/bilibili-API-collect/) for API references and guidance.
+
 ## License
 
 ISC
