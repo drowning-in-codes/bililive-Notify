@@ -1,0 +1,28 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    generateQRCode: () => ipcRenderer.invoke('generate-qr-code'),
+    pollQRLogin: (qrcodeKey) => ipcRenderer.invoke('poll-qr-login', qrcodeKey),
+    loginWithSESSDATA: (sessdata) => ipcRenderer.invoke('login-with-sessdata', sessdata),
+    getLoginStatus: () => ipcRenderer.invoke('get-login-status'),
+    getNotifySettings: () => ipcRenderer.invoke('get-notify-settings'),
+    setNotifySettings: (settings) => ipcRenderer.invoke('set-notify-settings', settings),
+    getUiSettings: () => ipcRenderer.invoke('get-ui-settings'),
+    setUiSettings: (settings) => ipcRenderer.invoke('set-ui-settings', settings),
+    getSystemMetrics: () => ipcRenderer.invoke('get-system-metrics'),
+    getMyInfo: () => ipcRenderer.invoke('get-my-info'),
+    getFollowGroups: () => ipcRenderer.invoke('get-follow-groups'),
+    getLiveFollowing: () => ipcRenderer.invoke('get-live-following'),
+    searchUsersByName: (keyword) => ipcRenderer.invoke('search-users-by-name', keyword),
+    followUser: (mid) => ipcRenderer.invoke('follow-user', mid),
+    openFollowListWindow: () => ipcRenderer.send('open-follow-list-window'),
+    getMonitorList: () => ipcRenderer.invoke('get-monitor-list'),
+    addMonitorUser: (user) => ipcRenderer.invoke('add-monitor-user', user),
+    removeMonitorUser: (mid) => ipcRenderer.invoke('remove-monitor-user', mid),
+    loginSuccess: () => ipcRenderer.send('login-success'),
+    minimizeWindow: () => ipcRenderer.send('minimize-window'),
+    maximizeWindow: () => ipcRenderer.send('maximize-window'),
+    closeWindow: () => ipcRenderer.send('close-window'),
+    closeLoginWindow: () => ipcRenderer.send('close-login-window'),
+    getWindowSize: () => ipcRenderer.sendSync('get-window-size')
+});

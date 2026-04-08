@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>登录 - B站直播监听</title>
+    <link rel="stylesheet" href="./login.css" />
+  </head>
+  <body>
+    <div class="login-container">
+      <div class="drag-area" aria-hidden="true"></div>
+      <h1>B站直播监听</h1>
+
+      <div class="login-tab">
+        <button class="tab-btn active" onclick="switchTab('qr-code-tab')">
+          二维码登录
+        </button>
+        <button class="tab-btn" onclick="switchTab('sessdata-tab')">
+          SESSDATA登录
+        </button>
+      </div>
+
+      <div id="qr-code-tab" class="tab-content active">
+        <div class="qr-code-container">
+          <img id="qrCodeImage" src="" alt="二维码" />
+          <div id="loginStatus" class="waiting">请扫描二维码登录</div>
+          <button class="refresh-btn" onclick="refreshQRCode()">
+            刷新二维码
+          </button>
+        </div>
+      </div>
+
+      <div id="sessdata-tab" class="tab-content">
+        <div class="sessdata-container">
+          <label for="sessdata">SESSDATA</label>
+          <input type="text" id="sessdata" placeholder="请输入SESSDATA" />
+          <button onclick="loginWithSESSDATA()">登录</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let qrcodeKey = null;
+      let pollInterval = null;
+
+      function switchTab(tabId) {
+        // 隐藏所有tab内容
+        document.querySelectorAll(".tab-content").forEach((tab) => {
+          tab.classList.remove("active");
+        });
+        // 移除所有tab按钮的active状态
+        document.querySelectorAll(".tab-btn").forEach((btn) => {
+          btn.classList.remove("active");
+        });
+        // 显示选中的tab内容
+        document.getElementById(tabId).classList.add("active");
+        // 激活选中的tab按钮
+        event.target.classList.add("active");
+      }
+
+      function updateLoginStatus(status, message = "") {
+        const statusElement = document.getElementById("loginStatus");
+        statusElement.className = status;
+
+        switch (status) {
+          case "waiting":
+            statusElement.textContent = message || "请扫描二维码登录";
+            break;
+          case "scanned":
+            statusElement.textContent = message || "已扫描，请在手机上确认";
+            break;
+          case "success":
+            statusElement.textContent = message || "登录成功！";
+            break;
+          case "error":
+            statusElement.textContent = message || "登录失败";
+            break;
+        }
+      }
+
+      async function generateQRCode() {
+        try {
+          updateLoginStatus("waiting", "生成二维码中...");
+          const result = await window.electronAPI.generateQRCode();
+
+          if (result.success) {
+            document.getElementById("qrCodeImage").src = result.qrCodeDataUrl;
+            qrcodeKey = result.qrcodeKey;
+            startPolling();
+            updateLoginStatus("waiting");
+          } else {
+            updateLoginStatus("error", result.message);
+          }
+        } catch (error) {
+          console.error("生成二维码失败:", error);
+          updateLoginStatus("error", "生成二维码失败");
+        }
+      }
+
+      function startPolling() {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
+
+        pollInterval = setInterval(async () => {
+          if (!qrcodeKey) return;
+
+          try {
+            const result = await window.electronAPI.pollQRLogin(qrcodeKey);
+
+            if (result.success) {
+              switch (result.status) {
+                case "waiting":
+                  updateLoginStatus("waiting");
+                  break;
+                case "scanned":
+                  updateLoginStatus("scanned");
+                  break;
+                case "success":
+                  updateLoginStatus("success");
+                  clearInterval(pollInterval);
+                  setTimeout(() => {
+                    window.electronAPI.loginSuccess();
+                  }, 1000);
+                  break;
+                case "expired":
+                  updateLoginStatus("error", "二维码已过期，请刷新");
+                  clearInterval(pollInterval);
+                  break;
+              }
+            } else {
+              updateLoginStatus("error", result.message);
+              clearInterval(pollInterval);
+            }
+          } catch (error) {
+            console.error("轮询失败:", error);
+            updateLoginStatus("error", "网络错误");
+            clearInterval(pollInterval);
+          }
+        }, 2000);
+      }
+
+      function refreshQRCode() {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+        }
+        generateQRCode();
+      }
+
+      async function loginWithSESSDATA() {
+        const sessdata = document.getElementById("sessdata").value.trim();
+
+        if (!sessdata) {
+          alert("请输入SESSDATA");
+          return;
+        }
+
+        try {
+          const result = await window.electronAPI.loginWithSESSDATA(sessdata);
+
+          if (result.success) {
+            alert("登录成功！");
+            window.electronAPI.loginSuccess();
+          } else {
+            alert("登录失败: " + result.message);
+          }
+        } catch (error) {
+          console.error("登录失败:", error);
+          alert("登录失败: 网络错误");
+        }
+      }
+
+      function closeWindow() {
+        window.electronAPI.closeLoginWindow();
+      }
+
+      // 页面加载时生成二维码
+      window.onload = function () {
+        generateQRCode();
+      };
+    </script>
+  </body>
+</html>

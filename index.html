@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>B站直播监听</title>
+    <link rel="stylesheet" href="./index.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="drag-area" aria-hidden="true"></div>
+      <div class="system-metrics" id="systemMetrics">
+        <div class="metrics-content" id="metricsContent">
+          <span class="metric-item"
+            >CPU: <strong id="cpuUsageText">--%</strong></span
+          >
+          <span class="metric-sep">|</span>
+          <span class="metric-item"
+            >内存: <strong id="memoryUsageText">--%</strong>
+            <span id="memoryUsedText">(-- / -- GB)</span></span
+          >
+        </div>
+        <button
+          id="toggleSystemMetricsBtn"
+          class="metrics-toggle-btn"
+          type="button"
+        >
+          不显示
+        </button>
+      </div>
+      <h1>B站直播监听</h1>
+
+      <div class="nav">
+        <div class="nav-left">
+          <span>欢迎使用B站直播监听工具</span>
+        </div>
+        <div class="nav-right">
+          <button id="openFollowListBtn" class="btn btn-primary" type="button">
+            关注列表
+          </button>
+          <button class="btn btn-secondary" onclick="logout()">退出登录</button>
+        </div>
+      </div>
+
+      <div class="status-bar">
+        <span>当前状态: 已登录</span>
+      </div>
+
+      <div class="dashboard-layout">
+        <div class="card user-panel">
+          <div class="card-title">账号信息</div>
+          <div class="user-info" id="userInfo">
+            <div class="user-profile-head">
+              <img id="userAvatar" class="user-avatar" src="" alt="用户头像" />
+              <div class="user-profile-meta">
+                <span class="label">昵称</span>
+                <span class="value" id="userNickname">加载中...</span>
+              </div>
+            </div>
+            <div class="user-info-item">
+              <span class="label">性别</span>
+              <span class="value" id="userSex">加载中...</span>
+            </div>
+            <div class="user-info-item">
+              <span class="label">会员等级</span>
+              <span class="value" id="userLevel">加载中...</span>
+            </div>
+            <div class="user-info-item">
+              <span class="label">硬币数</span>
+              <span class="value" id="userCoins">加载中...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card monitor-panel">
+          <div class="card-title">监听列表</div>
+          <div class="notify-config-row">
+            <label for="notifyPollIntervalInput">通知轮询(秒)</label>
+            <input
+              id="notifyPollIntervalInput"
+              type="number"
+              min="10"
+              max="3600"
+              step="1"
+            />
+            <button id="saveNotifyConfigBtn" class="btn-clear" type="button">
+              保存
+            </button>
+          </div>
+          <div class="follow-search-panel">
+            <div class="group-header">
+              <h3>添加监听用户</h3>
+            </div>
+            <div class="search-row">
+              <input
+                id="monitorSearchInput"
+                type="text"
+                placeholder="输入用户名，搜索并添加到监听列表"
+              />
+              <button id="monitorSearchBtn" class="btn-search" type="button">
+                搜索
+              </button>
+              <button
+                id="monitorSearchClearBtn"
+                class="btn-clear"
+                type="button"
+              >
+                清空
+              </button>
+            </div>
+            <div id="monitorSearchStatus" class="search-status"></div>
+            <ul id="monitorSearchResultList" class="search-result-list"></ul>
+          </div>
+
+          <div class="group-card">
+            <div class="group-header">
+              <h3>已监听用户</h3>
+              <span class="group-count" id="monitorCount">0 人</span>
+            </div>
+            <ul class="list" id="monitorList"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const monitorMidSet = new Set();
+      let monitorLiveSnapshot = new Set();
+      let monitorOverviewLoading = false;
+      let monitorLiveWatcherTimer = null;
+      let monitorLiveWatcherReady = false;
+      let monitorPollIntervalSec = 60;
+      let systemMetricsTimer = null;
+      let systemMetricsVisible = true;
+
+      async function refreshSystemMetrics() {
+        const cpuText = document.getElementById("cpuUsageText");
+        const memoryText = document.getElementById("memoryUsageText");
+        const memoryUsedText = document.getElementById("memoryUsedText");
+
+        try {
+          const result = await window.electronAPI.getSystemMetrics();
+          if (!result.success) {
+            cpuText.textContent = "--%";
+            memoryText.textContent = "--%";
+            memoryUsedText.textContent = "(-- / -- GB)";
+            return;
+          }
+
+          const cpuPercent = Number(result.data?.cpuUsagePercent || 0).toFixed(
+            1,
+          );
+          const memoryPercent = Number(
+            result.data?.memoryUsagePercent || 0,
+          ).toFixed(1);
+          const usedGb = Number(result.data?.memoryUsedGb || 0).toFixed(2);
+          const totalGb = Number(result.data?.memoryTotalGb || 0).toFixed(2);
+
+          cpuText.textContent = `${cpuPercent}%`;
+          memoryText.textContent = `${memoryPercent}%`;
+          memoryUsedText.textContent = `(${usedGb} / ${totalGb} GB)`;
+        } catch (error) {
+          console.error("刷新系统负载失败:", error);
+          cpuText.textContent = "--%";
+          memoryText.textContent = "--%";
+          memoryUsedText.textContent = "(-- / -- GB)";
+        }
+      }
+
+      function startSystemMetricsWatcher() {
+        if (!systemMetricsVisible) {
+          return;
+        }
+
+        if (systemMetricsTimer) {
+          clearInterval(systemMetricsTimer);
+        }
+
+        refreshSystemMetrics();
+        systemMetricsTimer = setInterval(refreshSystemMetrics, 2000);
+      }
+
+      function stopSystemMetricsWatcher() {
+        if (systemMetricsTimer) {
+          clearInterval(systemMetricsTimer);
+          systemMetricsTimer = null;
+        }
+      }
+
+      function setSystemMetricsVisible(visible) {
+        systemMetricsVisible = Boolean(visible);
+
+        const systemMetricsEl = document.getElementById("systemMetrics");
+        const toggleBtn = document.getElementById("toggleSystemMetricsBtn");
+
+        systemMetricsEl.classList.toggle("is-hidden", !systemMetricsVisible);
+        toggleBtn.textContent = systemMetricsVisible ? "不显示" : "显示";
+
+        if (systemMetricsVisible) {
+          startSystemMetricsWatcher();
+          return;
+        }
+
+        stopSystemMetricsWatcher();
+      }
+
+      async function loadUiSettings() {
+        try {
+          const result = await window.electronAPI.getUiSettings();
+          if (!result.success) {
+            setSystemMetricsVisible(true);
+            return;
+          }
+
+          setSystemMetricsVisible(result.data?.systemMetricsVisible !== false);
+        } catch (error) {
+          console.error("加载界面设置失败:", error);
+          setSystemMetricsVisible(true);
+        }
+      }
+
+      async function persistUiSettings() {
+        try {
+          await window.electronAPI.setUiSettings({
+            systemMetricsVisible,
+          });
+        } catch (error) {
+          console.error("保存界面设置失败:", error);
+        }
+      }
+
+      function toggleSystemMetricsVisible() {
+        setSystemMetricsVisible(!systemMetricsVisible);
+        persistUiSettings();
+      }
+
+      function buildLiveStateMap(liveList) {
+        const liveMap = new Map();
+        const users = Array.isArray(liveList) ? liveList : [];
+
+        users.forEach((user) => {
+          const mid = Number(user?.mid || 0);
+          if (mid) {
+            liveMap.set(mid, user);
+          }
+        });
+
+        return liveMap;
+      }
+
+      function getMonitoredLiveUsers(users, liveStateMap) {
+        const monitoredUsers = Array.isArray(users) ? users : [];
+        const matchedUsers = [];
+
+        monitoredUsers.forEach((user) => {
+          const mid = Number(user?.mid || 0);
+          const liveUser = liveStateMap.get(mid);
+          if (mid && liveUser) {
+            matchedUsers.push({
+              ...user,
+              liveRoomUrl: liveUser.liveUrl || "",
+              liveTitle: liveUser.title || "直播中",
+            });
+          }
+        });
+
+        return matchedUsers;
+      }
+
+      function showLiveNotification(user) {
+        if (typeof Notification === "undefined") {
+          return;
+        }
+
+        const title = `${user.name || "用户"}正在直播`;
+        const body = user.liveTitle ? `${user.liveTitle}` : "直播已开始";
+        const notification = new Notification(title, {
+          body,
+          icon: user.avatar || undefined,
+        });
+
+        notification.onclick = () => {
+          if (user.liveRoomUrl) {
+            window.open(user.liveRoomUrl, "_blank", "noopener,noreferrer");
+          }
+        };
+      }
+
+      function renderMonitorList(list, liveStateMap = new Map()) {
+        const monitorListEl = document.getElementById("monitorList");
+        const monitorCountEl = document.getElementById("monitorCount");
+        const users = Array.isArray(list) ? list : [];
+
+        monitorMidSet.clear();
+        users.forEach((user) => {
+          const mid = Number(user?.mid || 0);
+          if (mid) {
+            monitorMidSet.add(mid);
+          }
+        });
+
+        monitorListEl.innerHTML = "";
+        monitorCountEl.textContent = `${users.length} 人`;
+
+        if (users.length === 0) {
+          monitorListEl.innerHTML = '<li class="list-empty">暂无监听用户</li>';
+          return;
+        }
+
+        users.forEach((user) => {
+          const safeAvatar =
+            user.avatar || "https://static.hdslb.com/images/member/noface.gif";
+          const safeName = user.name || "-";
+          const levelText = user.level ?? "-";
+          const liveUser = liveStateMap.get(Number(user.mid || 0));
+          const isLive = Boolean(liveUser);
+          const liveText = isLive ? "正在直播" : "未开播";
+          const liveClass = isLive ? "live" : "offline";
+          const liveRoomUrl = liveUser?.liveUrl || "";
+
+          const li = document.createElement("li");
+          li.className = "list-item";
+          li.innerHTML = `
+              <div class="list-item-info">
+                <div class="avatar-wrap avatar-wrap-sm">
+                  <img class="list-item-avatar" src="${safeAvatar}" alt="${safeName}">
+                  <span class="avatar-badge">Lv.${levelText}</span>
+                </div>
+                <span class="list-item-name">${safeName}</span>
+                <span class="list-item-status">MID: ${user.mid}</span>
+                <span class="list-item-live-status ${liveClass}">${liveText}</span>
+              </div>
+              <div class="list-item-actions">
+                ${liveRoomUrl ? `<a class="btn-link btn-link-inline" href="${liveRoomUrl}" target="_blank" rel="noopener noreferrer">去直播间</a>` : ""}
+                <button class="btn-mini" type="button" data-action="remove-monitor" data-mid="${user.mid}">移除</button>
+              </div>
+            `;
+
+          monitorListEl.appendChild(li);
+        });
+      }
+
+      function createMonitorSearchResultItem(user) {
+        const li = document.createElement("li");
+        li.className = "search-result-item";
+        const safeAvatar =
+          user.avatar || "https://static.hdslb.com/images/member/noface.gif";
+        const isMonitored = Boolean(user.monitored);
+        const actionText = isMonitored ? "已添加" : "未添加";
+        const levelText = user.level ?? "-";
+
+        li.innerHTML = `
+            <div class="search-user-info">
+              <div class="avatar-wrap avatar-wrap-sm">
+                <img class="list-item-avatar" src="${safeAvatar}" alt="${user.name || "用户"}">
+                <span class="avatar-badge">Lv.${levelText}</span>
+              </div>
+              <div class="search-user-meta">
+                <div class="search-user-name">${user.name || "-"}</div>
+                <div class="search-user-sub">Lv.${user.level ?? "-"} | MID: ${user.mid}</div>
+              </div>
+            </div>
+            <div class="search-user-actions">
+              <button class="btn-mini ${isMonitored ? "added" : "primary"}" type="button" data-action="toggle-monitor" data-mid="${user.mid}" data-name="${encodeURIComponent(user.name || "-")}" data-avatar="${encodeURIComponent(user.avatar || "")}" data-level="${user.level ?? "-"}" data-monitored="${isMonitored ? "1" : "0"}">
+                ${actionText}
+              </button>
+            </div>
+          `;
+        return li;
+      }
+
+      async function getCurrentMonitorSet() {
+        const result = await window.electronAPI.getMonitorList();
+        if (!result.success) {
+          return new Set();
+        }
+
+        const list = Array.isArray(result.data) ? result.data : [];
+        return new Set(
+          list.map((item) => Number(item?.mid || 0)).filter(Boolean),
+        );
+      }
+
+      async function loadMonitorOverview(options = {}) {
+        if (monitorOverviewLoading) {
+          return;
+        }
+
+        monitorOverviewLoading = true;
+        const statusEl = document.getElementById("monitorSearchStatus");
+        try {
+          const [monitorResult, liveResult] = await Promise.all([
+            window.electronAPI.getMonitorList(),
+            window.electronAPI.getLiveFollowing(),
+          ]);
+
+          if (!monitorResult.success) {
+            statusEl.textContent = monitorResult.message || "加载监听列表失败";
+            renderMonitorList([]);
+            return;
+          }
+
+          const liveMap = liveResult.success
+            ? buildLiveStateMap(
+                Array.isArray(liveResult.data?.list)
+                  ? liveResult.data.list
+                  : [],
+              )
+            : new Map();
+
+          const nextLiveSnapshot = new Set();
+          const currentMonitoredLiveUsers = getMonitoredLiveUsers(
+            monitorResult.data || [],
+            liveMap,
+          );
+
+          currentMonitoredLiveUsers.forEach((user) => {
+            const mid = Number(user?.mid || 0);
+            if (mid) {
+              nextLiveSnapshot.add(mid);
+              if (
+                options.notify &&
+                monitorLiveWatcherReady &&
+                !monitorLiveSnapshot.has(mid)
+              ) {
+                showLiveNotification(user);
+              }
+            }
+          });
+
+          monitorLiveSnapshot = nextLiveSnapshot;
+          monitorLiveWatcherReady = true;
+
+          renderMonitorList(monitorResult.data || [], liveMap);
+        } catch (error) {
+          console.error("加载监听列表失败:", error);
+          statusEl.textContent = "网络错误，加载监听列表失败";
+          renderMonitorList([]);
+        } finally {
+          monitorOverviewLoading = false;
+        }
+      }
+
+      function startMonitorLiveWatcher() {
+        if (monitorLiveWatcherTimer) {
+          clearInterval(monitorLiveWatcherTimer);
+        }
+
+        monitorLiveWatcherTimer = setInterval(
+          () => {
+            loadMonitorOverview({ notify: true });
+          },
+          Math.max(10, Number(monitorPollIntervalSec || 60)) * 1000,
+        );
+      }
+
+      async function loadNotifyConfig() {
+        const notifyInput = document.getElementById("notifyPollIntervalInput");
+
+        try {
+          const result = await window.electronAPI.getNotifySettings();
+          if (!result.success) {
+            monitorPollIntervalSec = 60;
+            notifyInput.value = String(monitorPollIntervalSec);
+            return;
+          }
+
+          monitorPollIntervalSec = Number(result.data?.pollIntervalSec || 60);
+          notifyInput.value = String(monitorPollIntervalSec);
+        } catch (error) {
+          console.error("加载通知设置失败:", error);
+          monitorPollIntervalSec = 60;
+          notifyInput.value = String(monitorPollIntervalSec);
+        }
+      }
+
+      async function saveNotifyConfig() {
+        const statusEl = document.getElementById("monitorSearchStatus");
+        const notifyInput = document.getElementById("notifyPollIntervalInput");
+        const value = Number(notifyInput.value || 60);
+
+        try {
+          const result = await window.electronAPI.setNotifySettings({
+            pollIntervalSec: value,
+          });
+
+          if (!result.success) {
+            statusEl.textContent = result.message || "保存通知设置失败";
+            return;
+          }
+
+          monitorPollIntervalSec = Number(result.data?.pollIntervalSec || 60);
+          notifyInput.value = String(monitorPollIntervalSec);
+          startMonitorLiveWatcher();
+          statusEl.textContent = `通知轮询已设置为 ${monitorPollIntervalSec} 秒`;
+        } catch (error) {
+          console.error("保存通知设置失败:", error);
+          statusEl.textContent = "网络错误，保存通知设置失败";
+        }
+      }
+
+      async function handleSearchMonitorUsers() {
+        const keywordEl = document.getElementById("monitorSearchInput");
+        const statusEl = document.getElementById("monitorSearchStatus");
+        const resultListEl = document.getElementById("monitorSearchResultList");
+        const keyword = keywordEl.value.trim();
+
+        if (!keyword) {
+          statusEl.textContent = "请输入用户名";
+          resultListEl.innerHTML = "";
+          return;
+        }
+
+        statusEl.textContent = "搜索中...";
+        resultListEl.innerHTML = "";
+
+        try {
+          const currentMonitorSet = await getCurrentMonitorSet();
+          const result = await window.electronAPI.searchUsersByName(keyword);
+          if (!result.success) {
+            statusEl.textContent = result.message || "搜索失败";
+            return;
+          }
+
+          const users = (Array.isArray(result.data) ? result.data : []).map(
+            (user) => ({
+              ...user,
+              monitored: currentMonitorSet.has(Number(user?.mid || 0)),
+            }),
+          );
+          statusEl.textContent = `匹配到 ${users.length} 个用户`;
+
+          if (users.length === 0) {
+            resultListEl.innerHTML =
+              '<li class="list-empty">未找到匹配用户</li>';
+            return;
+          }
+
+          users.forEach((user) => {
+            resultListEl.appendChild(createMonitorSearchResultItem(user));
+          });
+        } catch (error) {
+          console.error("搜索用户失败:", error);
+          statusEl.textContent = "网络错误，搜索失败";
+        }
+      }
+
+      function clearMonitorSearch() {
+        const keywordEl = document.getElementById("monitorSearchInput");
+        const statusEl = document.getElementById("monitorSearchStatus");
+        const resultListEl = document.getElementById("monitorSearchResultList");
+
+        keywordEl.value = "";
+        statusEl.textContent = "";
+        resultListEl.innerHTML = "";
+        keywordEl.focus();
+      }
+
+      async function handleMonitorSearchResultClick(event) {
+        const btn = event.target.closest(
+          "button[data-action='toggle-monitor']",
+        );
+        if (!btn) {
+          return;
+        }
+
+        const statusEl = document.getElementById("monitorSearchStatus");
+        const isMonitored = btn.dataset.monitored === "1";
+        const payload = {
+          mid: Number(btn.dataset.mid || 0),
+          name: decodeURIComponent(btn.dataset.name || "-"),
+          avatar: decodeURIComponent(btn.dataset.avatar || ""),
+          level: btn.dataset.level || "-",
+        };
+
+        if (!payload.mid) {
+          return;
+        }
+
+        btn.disabled = true;
+        statusEl.textContent = isMonitored
+          ? `正在取消监听: ${payload.mid}`
+          : `正在添加监听: ${payload.mid}`;
+
+        try {
+          const result = isMonitored
+            ? await window.electronAPI.removeMonitorUser(payload.mid)
+            : await window.electronAPI.addMonitorUser(payload);
+          if (!result.success) {
+            statusEl.textContent =
+              result.message || (isMonitored ? "取消监听失败" : "添加监听失败");
+            btn.disabled = false;
+            return;
+          }
+
+          const nextMonitored = !isMonitored;
+          btn.dataset.monitored = nextMonitored ? "1" : "0";
+          btn.textContent = nextMonitored ? "已添加" : "未添加";
+          btn.classList.toggle("added", nextMonitored);
+          btn.classList.toggle("primary", !nextMonitored);
+          statusEl.textContent = nextMonitored
+            ? `已添加监听: ${payload.mid}`
+            : `已取消监听: ${payload.mid}`;
+
+          if (nextMonitored) {
+            monitorMidSet.add(payload.mid);
+          } else {
+            monitorMidSet.delete(payload.mid);
+          }
+          await loadMonitorOverview();
+        } catch (error) {
+          console.error("切换监听状态失败:", error);
+          statusEl.textContent = isMonitored
+            ? "网络错误，取消监听失败"
+            : "网络错误，添加监听失败";
+          btn.disabled = false;
+        }
+      }
+
+      async function handleMonitorListClick(event) {
+        const btn = event.target.closest(
+          "button[data-action='remove-monitor']",
+        );
+        if (!btn) {
+          return;
+        }
+
+        const statusEl = document.getElementById("monitorSearchStatus");
+        const mid = Number(btn.dataset.mid || 0);
+        if (!mid) {
+          return;
+        }
+
+        btn.disabled = true;
+        try {
+          const result = await window.electronAPI.removeMonitorUser(mid);
+          if (!result.success) {
+            statusEl.textContent = result.message || "移除监听失败";
+            btn.disabled = false;
+            return;
+          }
+
+          statusEl.textContent = `已移除监听: ${mid}`;
+          await loadMonitorOverview();
+        } catch (error) {
+          console.error("移除监听失败:", error);
+          statusEl.textContent = "网络错误，移除监听失败";
+          btn.disabled = false;
+        }
+      }
+
+      function logout() {
+        if (confirm("确定要退出登录吗？")) {
+          window.location.href = "login.html";
+        }
+      }
+
+      async function loadUserInfo() {
+        const nicknameEl = document.getElementById("userNickname");
+        const sexEl = document.getElementById("userSex");
+        const levelEl = document.getElementById("userLevel");
+        const coinsEl = document.getElementById("userCoins");
+        const avatarEl = document.getElementById("userAvatar");
+        const defaultAvatar =
+          "https://static.hdslb.com/images/member/noface.gif";
+
+        try {
+          const result = await window.electronAPI.getMyInfo();
+          if (!result.success) {
+            nicknameEl.textContent = "获取失败";
+            nicknameEl.classList.remove("vip-name");
+            sexEl.textContent = "获取失败";
+            levelEl.textContent = "获取失败";
+            coinsEl.textContent = "获取失败";
+            avatarEl.src = defaultAvatar;
+            return;
+          }
+
+          nicknameEl.textContent = result.data.nickname ?? "-";
+          nicknameEl.classList.toggle("vip-name", Boolean(result.data.isVip));
+          sexEl.textContent = result.data.sex ?? "-";
+          levelEl.textContent = result.data.level ?? "-";
+          coinsEl.textContent = String(result.data.coins ?? "-");
+          avatarEl.src = result.data.avatar || defaultAvatar;
+        } catch (error) {
+          console.error("加载用户信息失败:", error);
+          nicknameEl.textContent = "网络错误";
+          nicknameEl.classList.remove("vip-name");
+          sexEl.textContent = "网络错误";
+          levelEl.textContent = "网络错误";
+          coinsEl.textContent = "网络错误";
+          avatarEl.src = defaultAvatar;
+        }
+      }
+
+      window.onload = function () {
+        const saveNotifyConfigBtn = document.getElementById(
+          "saveNotifyConfigBtn",
+        );
+        const notifyPollIntervalInput = document.getElementById(
+          "notifyPollIntervalInput",
+        );
+        const monitorSearchBtn = document.getElementById("monitorSearchBtn");
+        const monitorSearchClearBtn = document.getElementById(
+          "monitorSearchClearBtn",
+        );
+        const monitorSearchInput =
+          document.getElementById("monitorSearchInput");
+        const monitorSearchResultList = document.getElementById(
+          "monitorSearchResultList",
+        );
+        const monitorListEl = document.getElementById("monitorList");
+        const openFollowListBtn = document.getElementById("openFollowListBtn");
+        const toggleSystemMetricsBtn = document.getElementById(
+          "toggleSystemMetricsBtn",
+        );
+
+        saveNotifyConfigBtn.addEventListener("click", saveNotifyConfig);
+        notifyPollIntervalInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            saveNotifyConfig();
+          }
+        });
+        monitorSearchBtn.addEventListener("click", handleSearchMonitorUsers);
+        monitorSearchClearBtn.addEventListener("click", clearMonitorSearch);
+        monitorSearchInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            handleSearchMonitorUsers();
+          }
+        });
+        monitorSearchResultList.addEventListener(
+          "click",
+          handleMonitorSearchResultClick,
+        );
+        monitorListEl.addEventListener("click", handleMonitorListClick);
+        openFollowListBtn.addEventListener("click", () => {
+          window.electronAPI.openFollowListWindow();
+        });
+        toggleSystemMetricsBtn.addEventListener(
+          "click",
+          toggleSystemMetricsVisible,
+        );
+
+        loadUserInfo();
+        loadUiSettings();
+        loadNotifyConfig().then(() => {
+          loadMonitorOverview();
+          startMonitorLiveWatcher();
+        });
+      };
+
+      window.addEventListener("beforeunload", () => {
+        stopSystemMetricsWatcher();
+
+        if (monitorLiveWatcherTimer) {
+          clearInterval(monitorLiveWatcherTimer);
+          monitorLiveWatcherTimer = null;
+        }
+      });
+    </script>
+  </body>
+</html>

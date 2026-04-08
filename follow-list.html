@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>关注列表</title>
+    <link rel="stylesheet" href="./follow-list.css" />
+  </head>
+  <body>
+    <div class="page">
+      <div class="drag-area" aria-hidden="true"></div>
+      <h1>关注列表</h1>
+
+      <div class="card">
+        <div class="row-header">
+          <h2>添加关注</h2>
+        </div>
+        <div class="search-row">
+          <input
+            id="followSearchInput"
+            type="text"
+            placeholder="输入用户名，搜索并关注"
+          />
+          <button id="followSearchBtn" class="btn-search" type="button">
+            搜索
+          </button>
+          <button id="followSearchClearBtn" class="btn-clear" type="button">
+            清空
+          </button>
+        </div>
+        <div id="followSearchStatus" class="search-status"></div>
+        <ul id="followSearchResultList" class="search-result-list"></ul>
+      </div>
+
+      <div class="card">
+        <div class="row-header">
+          <h2>正在直播</h2>
+          <span id="liveCount">加载中...</span>
+        </div>
+        <ul id="liveNowList" class="list"></ul>
+      </div>
+
+      <div class="card">
+        <div class="row-header">
+          <h2>特别关注</h2>
+          <span id="specialCount">加载中...</span>
+        </div>
+        <ul id="specialFollowList" class="list"></ul>
+      </div>
+
+      <div class="card">
+        <div class="row-header">
+          <h2>其他分组</h2>
+        </div>
+        <div id="otherGroupsContainer"></div>
+      </div>
+    </div>
+
+    <script>
+      const GROUP_PAGE_SIZE = 5;
+      const followGroupVisibleCountMap = new Map();
+
+      function renderMembers(listEl, members, options = {}) {
+        listEl.innerHTML = "";
+
+        if (!members || members.length === 0) {
+          const empty = document.createElement("li");
+          empty.className = "list-empty";
+          empty.textContent = "暂无成员";
+          listEl.appendChild(empty);
+          return;
+        }
+
+        const visibleCount = Math.min(
+          Math.max(Number(options.visibleCount || members.length), 0),
+          members.length,
+        );
+        const visibleMembers = members.slice(0, visibleCount);
+
+        visibleMembers.forEach((member) => {
+          const li = document.createElement("li");
+          li.className = "list-item";
+          const isLive = member.liveStatus === "live";
+          const statusText = isLive ? "直播中" : "未开播";
+          const safeName = member.name || "-";
+          const safeAvatar =
+            member.avatar ||
+            "https://static.hdslb.com/images/member/noface.gif";
+          const levelText = member.level ?? "-";
+
+          li.innerHTML = `
+            <div class="list-item-info">
+              <div class="avatar-wrap">
+                <img class="avatar" src="${safeAvatar}" alt="${safeName}">
+                <span class="avatar-badge">Lv.${levelText}</span>
+              </div>
+              <span class="name">${safeName}</span>
+              <span class="status ${isLive ? "live" : "offline"}">${statusText}</span>
+            </div>
+            ${isLive && member.liveUrl ? `<a class="btn-link" href="${member.liveUrl}" target="_blank" rel="noopener noreferrer">去直播间</a>` : ""}
+          `;
+          listEl.appendChild(li);
+        });
+
+        if (visibleCount < members.length) {
+          const moreLi = document.createElement("li");
+          moreLi.className = "list-more";
+
+          const moreBtn = document.createElement("button");
+          moreBtn.type = "button";
+          moreBtn.className = "btn-more";
+          moreBtn.textContent = `展示更多 (${visibleCount}/${members.length})`;
+
+          moreBtn.addEventListener("click", () => {
+            if (typeof options.onShowMore === "function") {
+              options.onShowMore();
+            }
+          });
+
+          moreLi.appendChild(moreBtn);
+          listEl.appendChild(moreLi);
+        }
+      }
+
+      function createSearchResultItem(user) {
+        const li = document.createElement("li");
+        li.className = "search-result-item";
+        const followed = Boolean(user.followed);
+        const safeAvatar =
+          user.avatar || "https://static.hdslb.com/images/member/noface.gif";
+        const levelText = user.level ?? "-";
+
+        li.innerHTML = `
+          <div class="search-user-info">
+            <div class="avatar-wrap">
+              <img class="avatar" src="${safeAvatar}" alt="${user.name || "用户"}">
+              <span class="avatar-badge">Lv.${levelText}</span>
+            </div>
+            <div class="search-user-meta">
+              <div class="search-user-name">${user.name || "-"}</div>
+              <div class="search-user-sub">Lv.${user.level ?? "-"} | MID: ${user.mid}</div>
+            </div>
+          </div>
+          <div class="search-user-actions">
+            <button class="btn-mini ${followed ? "disabled" : "primary"}" type="button" data-action="follow" data-mid="${user.mid}" ${followed ? "disabled" : ""}>
+              ${followed ? "已关注" : "关注"}
+            </button>
+          </div>
+        `;
+
+        return li;
+      }
+
+      async function handleSearchFollowUsers() {
+        const keywordEl = document.getElementById("followSearchInput");
+        const statusEl = document.getElementById("followSearchStatus");
+        const resultListEl = document.getElementById("followSearchResultList");
+        const keyword = keywordEl.value.trim();
+
+        if (!keyword) {
+          statusEl.textContent = "请输入用户名";
+          resultListEl.innerHTML = "";
+          return;
+        }
+
+        statusEl.textContent = "搜索中...";
+        resultListEl.innerHTML = "";
+
+        try {
+          const result = await window.electronAPI.searchUsersByName(keyword);
+          if (!result.success) {
+            statusEl.textContent = result.message || "搜索失败";
+            return;
+          }
+
+          const users = Array.isArray(result.data) ? result.data : [];
+          statusEl.textContent = `匹配到 ${users.length} 个用户`;
+
+          if (users.length === 0) {
+            resultListEl.innerHTML =
+              '<li class="list-empty">未找到匹配用户</li>';
+            return;
+          }
+
+          users.forEach((user) => {
+            resultListEl.appendChild(createSearchResultItem(user));
+          });
+        } catch (error) {
+          console.error("搜索用户失败:", error);
+          statusEl.textContent = "网络错误，搜索失败";
+        }
+      }
+
+      function clearFollowSearch() {
+        const keywordEl = document.getElementById("followSearchInput");
+        const statusEl = document.getElementById("followSearchStatus");
+        const resultListEl = document.getElementById("followSearchResultList");
+
+        keywordEl.value = "";
+        statusEl.textContent = "";
+        resultListEl.innerHTML = "";
+        keywordEl.focus();
+      }
+
+      async function handleSearchResultClick(event) {
+        const btn = event.target.closest("button[data-action='follow']");
+        if (!btn) {
+          return;
+        }
+
+        const statusEl = document.getElementById("followSearchStatus");
+        const mid = Number(btn.dataset.mid || 0);
+        if (!mid) {
+          return;
+        }
+
+        btn.disabled = true;
+        statusEl.textContent = `正在关注 ${mid}...`;
+
+        try {
+          const result = await window.electronAPI.followUser(mid);
+          if (!result.success) {
+            statusEl.textContent = result.message || "关注失败";
+            btn.disabled = false;
+            return;
+          }
+
+          btn.textContent = "已关注";
+          btn.classList.remove("primary");
+          btn.classList.add("disabled");
+          statusEl.textContent = `关注成功: ${mid}`;
+
+          await Promise.all([loadFollowGroups(), loadLiveFollowing()]);
+        } catch (error) {
+          console.error("关注用户失败:", error);
+          statusEl.textContent = "网络错误，关注失败";
+          btn.disabled = false;
+        }
+      }
+
+      async function loadLiveFollowing() {
+        const liveListEl = document.getElementById("liveNowList");
+        const liveCountEl = document.getElementById("liveCount");
+
+        liveCountEl.textContent = "加载中...";
+        liveListEl.innerHTML = "";
+
+        try {
+          const result = await window.electronAPI.getLiveFollowing();
+          if (!result.success) {
+            liveCountEl.textContent = "加载失败";
+            renderMembers(liveListEl, []);
+            return;
+          }
+
+          const list = Array.isArray(result.data?.list) ? result.data.list : [];
+          liveCountEl.textContent = `${result.data?.count ?? list.length} 人`;
+          renderMembers(liveListEl, list);
+        } catch (error) {
+          console.error("加载直播列表失败:", error);
+          liveCountEl.textContent = "网络错误";
+          renderMembers(liveListEl, []);
+        }
+      }
+
+      async function loadFollowGroups() {
+        const specialListEl = document.getElementById("specialFollowList");
+        const specialCountEl = document.getElementById("specialCount");
+        const otherContainerEl = document.getElementById(
+          "otherGroupsContainer",
+        );
+
+        specialCountEl.textContent = "加载中...";
+        specialListEl.innerHTML = "";
+        otherContainerEl.innerHTML = "";
+        followGroupVisibleCountMap.clear();
+
+        try {
+          const result = await window.electronAPI.getFollowGroups();
+          if (!result.success) {
+            specialCountEl.textContent = "加载失败";
+            renderMembers(specialListEl, []);
+            otherContainerEl.innerHTML = `<div class="list-empty">${result.message || "获取分组失败"}</div>`;
+            return;
+          }
+
+          const special = result.data.special || { members: [], count: 0 };
+          const otherGroups = Array.isArray(result.data.otherGroups)
+            ? result.data.otherGroups
+            : [];
+
+          specialCountEl.textContent = `${special.count} 人`;
+
+          const specialKey = "special";
+          const renderSpecialMembers = () => {
+            const currentVisible =
+              followGroupVisibleCountMap.get(specialKey) || GROUP_PAGE_SIZE;
+            renderMembers(specialListEl, special.members || [], {
+              visibleCount: currentVisible,
+              onShowMore: () => {
+                followGroupVisibleCountMap.set(
+                  specialKey,
+                  currentVisible + GROUP_PAGE_SIZE,
+                );
+                renderSpecialMembers();
+              },
+            });
+          };
+          renderSpecialMembers();
+
+          if (otherGroups.length === 0) {
+            otherContainerEl.innerHTML =
+              '<div class="list-empty">暂无其他分组</div>';
+            return;
+          }
+
+          otherGroups.forEach((group) => {
+            const section = document.createElement("section");
+            section.className = "sub-group";
+
+            const header = document.createElement("div");
+            header.className = "row-header sub";
+            header.innerHTML = `<h3>${group.name}</h3><span>${group.count} 人</span>`;
+
+            const listEl = document.createElement("ul");
+            listEl.className = "list";
+
+            section.appendChild(header);
+            section.appendChild(listEl);
+            otherContainerEl.appendChild(section);
+
+            const groupKey = `group-${group.tagid}`;
+            const renderGroupMembers = () => {
+              const currentVisible =
+                followGroupVisibleCountMap.get(groupKey) || GROUP_PAGE_SIZE;
+              renderMembers(listEl, group.members || [], {
+                visibleCount: currentVisible,
+                onShowMore: () => {
+                  followGroupVisibleCountMap.set(
+                    groupKey,
+                    currentVisible + GROUP_PAGE_SIZE,
+                  );
+                  renderGroupMembers();
+                },
+              });
+            };
+            renderGroupMembers();
+          });
+        } catch (error) {
+          console.error("加载分组关注失败:", error);
+          specialCountEl.textContent = "网络错误";
+          renderMembers(specialListEl, []);
+          otherContainerEl.innerHTML =
+            '<div class="list-empty">网络错误，加载分组关注失败</div>';
+        }
+      }
+
+      window.onload = function () {
+        const searchBtn = document.getElementById("followSearchBtn");
+        const searchClearBtn = document.getElementById("followSearchClearBtn");
+        const searchInput = document.getElementById("followSearchInput");
+        const searchResultList = document.getElementById(
+          "followSearchResultList",
+        );
+
+        searchBtn.addEventListener("click", handleSearchFollowUsers);
+        searchClearBtn.addEventListener("click", clearFollowSearch);
+        searchInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            handleSearchFollowUsers();
+          }
+        });
+        searchResultList.addEventListener("click", handleSearchResultClick);
+
+        loadLiveFollowing();
+        loadFollowGroups();
+      };
+    </script>
+  </body>
+</html>
