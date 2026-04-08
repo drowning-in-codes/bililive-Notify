@@ -58,7 +58,9 @@
 
     <script>
       const GROUP_PAGE_SIZE = 5;
+      const LIVE_PAGE_SIZE = 10;
       const followGroupVisibleCountMap = new Map();
+      let liveVisibleCount = LIVE_PAGE_SIZE;
 
       function renderMembers(listEl, members, options = {}) {
         listEl.innerHTML = "";
@@ -244,6 +246,7 @@
 
         liveCountEl.textContent = "加载中...";
         liveListEl.innerHTML = "";
+        liveVisibleCount = LIVE_PAGE_SIZE;
 
         try {
           const result = await window.electronAPI.getLiveFollowing();
@@ -255,7 +258,17 @@
 
           const list = Array.isArray(result.data?.list) ? result.data.list : [];
           liveCountEl.textContent = `${result.data?.count ?? list.length} 人`;
-          renderMembers(liveListEl, list);
+          const renderLiveMembers = () => {
+            renderMembers(liveListEl, list, {
+              visibleCount: liveVisibleCount,
+              onShowMore: () => {
+                liveVisibleCount += LIVE_PAGE_SIZE;
+                renderLiveMembers();
+              },
+            });
+          };
+
+          renderLiveMembers();
         } catch (error) {
           console.error("加载直播列表失败:", error);
           liveCountEl.textContent = "网络错误";
