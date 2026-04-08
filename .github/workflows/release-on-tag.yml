@@ -1,12 +1,9 @@
-name: Build and Release (Main Only)
+name: Build and Release on Tag
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag_name:
-        description: "发布标签（示例：v1.2.3）"
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -14,36 +11,10 @@ permissions:
 jobs:
   build-and-release:
     runs-on: windows-latest
-    if: github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Validate tag input
-        shell: pwsh
-        run: |
-          $tag = "${{ github.event.inputs.tag_name }}"
-          if (-not ($tag -match '^v\d+\.\d+\.\d+([-.].+)?$')) {
-            throw "tag_name 格式无效，需类似 v1.2.3"
-          }
-
-      - name: Create and push tag
-        shell: pwsh
-        run: |
-          $tag = "${{ github.event.inputs.tag_name }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if (git ls-remote --tags origin "refs/tags/$tag") {
-            throw "标签已存在: $tag"
-          }
-
-          git tag "$tag"
-          git push origin "$tag"
-          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -65,13 +36,12 @@ jobs:
             throw "Build output path not found: $sourceDir"
           }
 
-          $artifactName = "bililive-notify-${{ env.RELEASE_TAG }}-squirrel-windows-x64.zip"
+          $artifactName = "bililive-notify-${{ github.ref_name }}-squirrel-windows-x64.zip"
           Compress-Archive -Path "$sourceDir/*" -DestinationPath $artifactName -Force
           "ARTIFACT_ZIP=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ${{ env.ARTIFACT_ZIP }}
