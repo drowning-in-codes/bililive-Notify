@@ -43,7 +43,18 @@
               ?
             </button>
           </div>
-          <input type="text" id="sessdata" placeholder="请输入SESSDATA" />
+          <div class="sessdata-input-wrap">
+            <input type="password" id="sessdata" placeholder="请输入SESSDATA" />
+            <button
+              id="toggleSessdataVisibilityBtn"
+              class="sessdata-visibility-btn"
+              type="button"
+              title="显示SESSDATA"
+              aria-label="显示SESSDATA"
+            >
+              &#128065;
+            </button>
+          </div>
           <button onclick="loginWithSESSDATA()">登录</button>
         </div>
       </div>
@@ -184,6 +195,22 @@
         window.electronAPI.openSessdataGuideWindow();
       }
 
+      function toggleSessdataVisibility() {
+        const sessdataInput = document.getElementById("sessdata");
+        const toggleBtn = document.getElementById(
+          "toggleSessdataVisibilityBtn",
+        );
+        const isPassword = sessdataInput.type === "password";
+
+        sessdataInput.type = isPassword ? "text" : "password";
+        toggleBtn.innerHTML = isPassword ? "&#128584;" : "&#128065;";
+        toggleBtn.title = isPassword ? "隐藏SESSDATA" : "显示SESSDATA";
+        toggleBtn.setAttribute(
+          "aria-label",
+          isPassword ? "隐藏SESSDATA" : "显示SESSDATA",
+        );
+      }
+
       function closeWindow() {
         window.electronAPI.closeLoginWindow();
       }
@@ -191,7 +218,14 @@
       // 页面加载时生成二维码
       window.onload = function () {
         const sessdataHelpBtn = document.getElementById("sessdataHelpBtn");
+        const toggleSessdataVisibilityBtn = document.getElementById(
+          "toggleSessdataVisibilityBtn",
+        );
         sessdataHelpBtn.addEventListener("click", openSessdataGuideWindow);
+        toggleSessdataVisibilityBtn.addEventListener(
+          "click",
+          toggleSessdataVisibility,
+        );
         generateQRCode();
       };
     </script>

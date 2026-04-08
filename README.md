@@ -4,6 +4,7 @@
 ![介绍图](./imgs/bili-notify.png)
 
 An Electron-based desktop app for monitoring Bilibili live streams. It supports QR-code login or manual SESSDATA login, shows account info and follow groups, lists currently live followed creators, and maintains a separate monitoring list.
+![介绍流程](./imgs/intro.gif)
 
 ## 功能 Features
 

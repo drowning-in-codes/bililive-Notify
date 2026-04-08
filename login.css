@@ -166,6 +166,36 @@ input {
   box-sizing: border-box;
 }
 
+.sessdata-input-wrap {
+  position: relative;
+}
+
+.sessdata-input-wrap input {
+  padding-right: 42px;
+}
+
+.sessdata-visibility-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #666;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.sessdata-visibility-btn:hover {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
 input:focus {
   outline: none;
   border-color: #00a1d6;
