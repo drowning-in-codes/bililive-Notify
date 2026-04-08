@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>关注列表</title>
+    <link rel="icon" href="./imgs/favicon.ico" type="image/x-icon" />
     <link rel="stylesheet" href="./follow-list.css" />
   </head>
   <body>
@@ -89,6 +90,12 @@
             member.avatar ||
             "https://static.hdslb.com/images/member/noface.gif";
           const levelText = member.level ?? "-";
+          const roomTitle = member.title || "直播中";
+          const roomUrl = member.liveUrl || member.url || "";
+          const roomTitleLink =
+            isLive && roomUrl
+              ? `<a class="room-title-link" href="${roomUrl}" target="_blank" rel="noopener noreferrer">${roomTitle}</a>`
+              : "";
 
           li.innerHTML = `
             <div class="list-item-info">
@@ -98,8 +105,9 @@
               </div>
               <span class="name">${safeName}</span>
               <span class="status ${isLive ? "live" : "offline"}">${statusText}</span>
+                ${roomTitleLink}
             </div>
-            ${isLive && member.liveUrl ? `<a class="btn-link" href="${member.liveUrl}" target="_blank" rel="noopener noreferrer">去直播间</a>` : ""}
+              ${isLive && roomUrl ? `<a class="btn-link" href="${roomUrl}" target="_blank" rel="noopener noreferrer">去直播间</a>` : ""}
           `;
           listEl.appendChild(li);
         });
@@ -237,6 +245,38 @@
           console.error("关注用户失败:", error);
           statusEl.textContent = "网络错误，关注失败";
           btn.disabled = false;
+        }
+      }
+
+      async function handleLiveLinkClick(event) {
+        const liveLink = event.target.closest("a.room-title-link, a.btn-link");
+        if (!liveLink) {
+          return;
+        }
+
+        event.preventDefault();
+        const roomUrl = String(liveLink.getAttribute("href") || "").trim();
+        if (!roomUrl) {
+          return;
+        }
+
+        try {
+          const externalResult =
+            await window.electronAPI.openExternalUrl(roomUrl);
+          if (externalResult?.success) {
+            return;
+          }
+          throw new Error(externalResult?.message || "openExternal失败");
+        } catch (error) {
+          console.warn("shell.openExternal失败，回退window.open:", error);
+          const openedWindow = window.open(
+            roomUrl,
+            "_blank",
+            "noopener,noreferrer",
+          );
+          if (!openedWindow) {
+            alert("打开失败：未检测到可用浏览器或被系统拦截");
+          }
         }
       }
 
@@ -384,6 +424,7 @@
           }
         });
         searchResultList.addEventListener("click", handleSearchResultClick);
+        document.body.addEventListener("click", handleLiveLinkClick);
 
         loadLiveFollowing();
         loadFollowGroups();

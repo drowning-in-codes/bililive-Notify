@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>B站直播监听</title>
+    <link rel="icon" href="./imgs/favicon.ico" type="image/x-icon" />
     <link rel="stylesheet" href="./index.css" />
   </head>
   <body>
@@ -242,9 +243,9 @@
         persistUiSettings();
       }
 
-      function buildLiveStateMap(liveList) {
+      function buildLiveStateMap(roomStatusList) {
         const liveMap = new Map();
-        const users = Array.isArray(liveList) ? liveList : [];
+        const users = Array.isArray(roomStatusList) ? roomStatusList : [];
 
         users.forEach((user) => {
           const mid = Number(user?.mid || 0);
@@ -262,12 +263,12 @@
 
         monitoredUsers.forEach((user) => {
           const mid = Number(user?.mid || 0);
-          const liveUser = liveStateMap.get(mid);
-          if (mid && liveUser) {
+          const roomStatus = liveStateMap.get(mid);
+          if (mid && roomStatus && Number(roomStatus.liveStatus) === 1) {
             matchedUsers.push({
               ...user,
-              liveRoomUrl: liveUser.liveUrl || "",
-              liveTitle: liveUser.title || "直播中",
+              liveRoomUrl: roomStatus.url || "",
+              liveTitle: roomStatus.title || "直播中",
             });
           }
         });
@@ -328,11 +329,19 @@
             user.avatar || "https://static.hdslb.com/images/member/noface.gif";
           const safeName = user.name || "-";
           const levelText = user.level ?? "-";
-          const liveUser = liveStateMap.get(Number(user.mid || 0));
-          const isLive = Boolean(liveUser);
-          const liveText = isLive ? "正在直播" : "未开播";
+          const roomStatus = liveStateMap.get(Number(user.mid || 0));
+          const liveStatusNum = Number(roomStatus?.liveStatus ?? 0);
+          const isLive = liveStatusNum === 1;
+          const liveText =
+            roomStatus?.liveStatusText ||
+            (isLive ? "直播中" : liveStatusNum === 2 ? "轮播中" : "未开播");
           const liveClass = isLive ? "live" : "offline";
-          const liveRoomUrl = liveUser?.liveUrl || "";
+          const liveRoomUrl = roomStatus?.url || "";
+          const liveTitle = roomStatus?.title || "直播中";
+          const liveTitleLink =
+            isLive && liveRoomUrl
+              ? `<a class="room-title-link" href="${liveRoomUrl}" target="_blank" rel="noopener noreferrer">${liveTitle}</a>`
+              : "";
 
           const li = document.createElement("li");
           li.className = "list-item";
@@ -345,9 +354,10 @@
                 <span class="list-item-name">${safeName}</span>
                 <span class="list-item-status">MID: ${user.mid}</span>
                 <span class="list-item-live-status ${liveClass}">${liveText}</span>
+                ${liveTitleLink}
               </div>
               <div class="list-item-actions">
-                ${liveRoomUrl ? `<a class="btn-link btn-link-inline" href="${liveRoomUrl}" target="_blank" rel="noopener noreferrer">去直播间</a>` : ""}
+                ${isLive && liveRoomUrl ? `<a class="btn-link" data-action="open-live-room" href="${liveRoomUrl}" target="_blank" rel="noopener noreferrer">去直播间</a>` : ""}
                 <button class="btn-mini" type="button" data-action="remove-monitor" data-mid="${user.mid}">移除</button>
               </div>
             `;
@@ -405,10 +415,7 @@
         monitorOverviewLoading = true;
         const statusEl = document.getElementById("monitorSearchStatus");
         try {
-          const [monitorResult, liveResult] = await Promise.all([
-            window.electronAPI.getMonitorList(),
-            window.electronAPI.getLiveFollowing(),
-          ]);
+          const monitorResult = await window.electronAPI.getMonitorList();
 
           if (!monitorResult.success) {
             statusEl.textContent = monitorResult.message || "加载监听列表失败";
@@ -416,10 +423,19 @@
             return;
           }
 
-          const liveMap = liveResult.success
+          const monitorMids = (
+            Array.isArray(monitorResult.data) ? monitorResult.data : []
+          )
+            .map((user) => Number(user?.mid || 0))
+            .filter(Boolean);
+
+          const roomStatusResult =
+            await window.electronAPI.getLiveRoomStatusByMids(monitorMids);
+
+          const liveMap = roomStatusResult.success
             ? buildLiveStateMap(
-                Array.isArray(liveResult.data?.list)
-                  ? liveResult.data.list
+                Array.isArray(roomStatusResult.data)
+                  ? roomStatusResult.data
                   : [],
               )
             : new Map();
@@ -635,6 +651,35 @@
       }
 
       async function handleMonitorListClick(event) {
+        const liveLink = event.target.closest(
+          "a[data-action='open-live-room'], a.room-title-link",
+        );
+        if (liveLink) {
+          event.preventDefault();
+          const roomUrl = String(liveLink.getAttribute("href") || "").trim();
+          if (roomUrl) {
+            try {
+              const externalResult =
+                await window.electronAPI.openExternalUrl(roomUrl);
+              if (externalResult?.success) {
+                return;
+              }
+              throw new Error(externalResult?.message || "openExternal失败");
+            } catch (error) {
+              console.warn("shell.openExternal失败，回退window.open:", error);
+              const openedWindow = window.open(
+                roomUrl,
+                "_blank",
+                "noopener,noreferrer",
+              );
+              if (!openedWindow) {
+                alert("打开失败：未检测到可用浏览器或被系统拦截");
+              }
+            }
+          }
+          return;
+        }
+
         const btn = event.target.closest(
           "button[data-action='remove-monitor']",
         );

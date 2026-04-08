@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, Notification, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -24,6 +24,7 @@ const CACHE_TTL = {
     myInfo: 30 * 60 * 1000,
     followGroups: 10 * 60 * 1000,
     liveFollowing: 60 * 1000,
+    liveRoomStatusByMids: 60 * 1000,
     searchUsers: 10 * 60 * 1000,
     userProfile: 24 * 60 * 60 * 1000
 };
@@ -698,6 +699,47 @@ async function enrichMembersWithProfiles(members, headers) {
     });
 }
 
+async function enrichMembersWithLiveRoomStatus(members) {
+    const list = Array.isArray(members) ? members : [];
+    const liveMids = [...new Set(list
+        .filter((member) => member?.liveStatus === 'live')
+        .map((member) => Number(member?.mid || 0))
+        .filter(Boolean))];
+
+    if (liveMids.length === 0) {
+        return list;
+    }
+
+    const roomStatusList = await getLiveRoomStatusByMids(liveMids);
+    const roomStatusMap = new Map(
+        (Array.isArray(roomStatusList) ? roomStatusList : [])
+            .map((item) => [Number(item?.mid || 0), item])
+    );
+
+    return list.map((member) => {
+        const mid = Number(member?.mid || 0);
+        if (!mid || member?.liveStatus !== 'live') {
+            return member;
+        }
+
+        const roomStatus = roomStatusMap.get(mid);
+        if (!roomStatus) {
+            return member;
+        }
+
+        const isLive = Number(roomStatus.liveStatus) === 1;
+        const roomUrl = roomStatus.url || member.liveUrl || member.url || '';
+
+        return {
+            ...member,
+            liveStatus: isLive ? 'live' : 'offline',
+            title: isLive ? (roomStatus.title || member.title || '直播中') : '',
+            liveUrl: isLive ? roomUrl : '',
+            url: isLive ? roomUrl : ''
+        };
+    });
+}
+
 async function getCurrentUserId(headers) {
     const navResponse = await axios.get('https://api.bilibili.com/x/web-interface/nav', {
         headers
@@ -716,13 +758,70 @@ async function getCurrentUserId(headers) {
 }
 
 function normalizeFollowMember(member) {
+    const roomId = Number(member?.live?.roomid || member?.live?.room_id || member?.roomid || member?.room_id || 0);
+    const shortId = Number(member?.live?.short_id || member?.live?.shortid || member?.short_id || member?.shortid || 0);
+    const rawLiveUrl = member?.live?.jump_url || member?.live?.url || member?.live?.link || member?.live_url || member?.url || '';
+    const liveUrl = String(rawLiveUrl || '').trim() || (roomId ? `https://live.bilibili.com/${roomId}` : shortId ? `https://live.bilibili.com/${shortId}` : '');
+
     return {
         mid: member.mid,
         name: member.uname || '-',
         avatar: normalizeAvatarUrl(member.face),
         liveStatus: member.live?.live_status === 1 ? 'live' : 'offline',
-        liveUrl: member.live?.jump_url || ''
+        liveUrl,
+        title: member?.live?.title || ''
     };
+}
+
+function normalizeLiveRoomStatusItem(mid, item = {}) {
+    const liveStatusNum = Number(item.live_status ?? item.liveStatus ?? 0);
+    const roomId = Number(item.room_id || item.roomid || 0);
+    const shortId = Number(item.short_id || item.shortid || 0);
+    const liveUrl = item.url || item.live_url || (roomId ? `https://live.bilibili.com/${roomId}` : shortId ? `https://live.bilibili.com/${shortId}` : '');
+
+    return {
+        mid: Number(mid || 0),
+        liveStatus: liveStatusNum,
+        liveStatusText: liveStatusNum === 1 ? '直播中' : liveStatusNum === 2 ? '轮播中' : '未开播',
+        title: item.title || '',
+        url: liveUrl,
+        roomId
+    };
+}
+
+async function getLiveRoomStatusByMids(mids = []) {
+    const targetMids = [...new Set((Array.isArray(mids) ? mids : [])
+        .map((mid) => Number(mid || 0))
+        .filter(Boolean))];
+
+    if (targetMids.length === 0) {
+        return [];
+    }
+
+    const params = new URLSearchParams();
+    targetMids.forEach((mid) => {
+        params.append('uids[]', String(mid));
+    });
+
+    const response = await axios.get(`https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids?${params.toString()}`, {
+        headers: {
+            Referer: 'https://live.bilibili.com',
+            'User-Agent': 'Mozilla/5.0'
+        }
+    });
+
+    if (response.data.code !== 0) {
+        throw new Error(response.data.message || response.data.msg || '获取直播间状态失败');
+    }
+
+    const data = response.data.data && typeof response.data.data === 'object'
+        ? response.data.data
+        : {};
+
+    return targetMids.map((mid) => {
+        const item = data[String(mid)] || data[mid] || {};
+        return normalizeLiveRoomStatusItem(mid, item);
+    });
 }
 function showNotification(options) {
     if (!Notification.isSupported()) {
@@ -1059,12 +1158,17 @@ ipcMain.handle('get-follow-groups', async () => {
                 )
             ]);
 
-            const specialMembers = await enrichMembersWithProfiles(specialMembersRaw, headers);
+            const specialMembersWithProfile = await enrichMembersWithProfiles(specialMembersRaw, headers);
+            const specialMembers = await enrichMembersWithLiveRoomStatus(specialMembersWithProfile);
             const otherGroups = await Promise.all(
-                otherGroupsRaw.map(async (group) => ({
-                    ...group,
-                    members: await enrichMembersWithProfiles(group.members, headers)
-                }))
+                otherGroupsRaw.map(async (group) => {
+                    const membersWithProfile = await enrichMembersWithProfiles(group.members, headers);
+                    const members = await enrichMembersWithLiveRoomStatus(membersWithProfile);
+                    return {
+                        ...group,
+                        members
+                    };
+                })
             );
 
             return {
@@ -1246,16 +1350,25 @@ ipcMain.handle('get-live-following', async () => {
 
             const livingUsers = sourceList
                 .filter((item) => Number(item.live_status) === 1)
-                .map((item) => ({
-                    mid: Number(item.uid || 0),
-                    roomId: Number(item.room_id || item.roomid || 0),
-                    name: item.uname || '-',
-                    avatar: normalizeAvatarUrl(item.face),
-                    title: item.title || '直播中',
-                    areaName: item.area_name || item.area_v2_name || '',
-                    online: Number(item.online || 0),
-                    liveStatus: 'live'
-                }));
+                .map((item) => {
+                    const roomId = Number(item.room_id || item.roomid || 0);
+                    const shortId = Number(item.short_id || item.shortid || 0);
+                    const rawLiveUrl = item.jump_url || item.url || item.link || item.live_url || '';
+                    const liveUrl = String(rawLiveUrl || '').trim() || (roomId ? `https://live.bilibili.com/${roomId}` : shortId ? `https://live.bilibili.com/${shortId}` : '');
+
+                    return {
+                        mid: Number(item.uid || 0),
+                        roomId,
+                        name: item.uname || '-',
+                        avatar: normalizeAvatarUrl(item.face),
+                        title: item.title || '直播中',
+                        areaName: item.area_name || item.area_v2_name || '',
+                        online: Number(item.online || 0),
+                        liveStatus: 'live',
+                        liveUrl,
+                        url: liveUrl
+                    };
+                });
 
             const enriched = await enrichMembersWithProfiles(livingUsers, {
                 Cookie: cookieHeader
@@ -1432,5 +1545,44 @@ ipcMain.handle('set-ui-settings', (event, settings) => {
             success: false,
             message: '保存界面设置失败'
         };
+    }
+});
+
+ipcMain.handle('get-live-room-status-by-mids', async (event, mids) => {
+    const targetMids = [...new Set((Array.isArray(mids) ? mids : [])
+        .map((mid) => Number(mid || 0))
+        .filter(Boolean))];
+
+    if (targetMids.length === 0) {
+        return { success: true, data: [] };
+    }
+
+    try {
+        const cacheKey = getCacheKey('public-live-room-status', `mids:${targetMids.sort((a, b) => a - b).join(',')}`);
+        const data = await cachedFetch(cacheKey, CACHE_TTL.liveRoomStatusByMids, async () => getLiveRoomStatusByMids(targetMids));
+        return { success: true, data };
+    } catch (error) {
+        console.error('获取直播间状态失败:', error);
+        return { success: false, message: '网络错误，获取直播间状态失败' };
+    }
+});
+
+ipcMain.handle('open-external-url', async (event, rawUrl) => {
+    try {
+        const url = String(rawUrl || '').trim();
+        if (!url) {
+            return { success: false, message: '链接为空' };
+        }
+
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return { success: false, message: '仅支持http/https链接' };
+        }
+
+        await shell.openExternal(parsed.toString());
+        return { success: true };
+    } catch (error) {
+        console.error('打开外部链接失败:', error);
+        return { success: false, message: '打开链接失败' };
     }
 });
