@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -9,8 +9,10 @@ const qrcode = require('qrcode');
 let mainWindow;
 let loginWindow;
 let followListWindow;
+let sessdataGuideWindow;
 let tray = null;
 let isQuitting = false;
+let isSwitchingToLogin = false;
 let closePromptVisible = false;
 let cookiePath = path.join(app.getPath('userData'), 'cookies.json');
 let monitorListPath = path.join(app.getPath('userData'), 'monitor-list.json');
@@ -30,6 +32,11 @@ const DEFAULT_NOTIFY_POLL_INTERVAL_SEC = 60;
 const MIN_NOTIFY_POLL_INTERVAL_SEC = 10;
 const MAX_NOTIFY_POLL_INTERVAL_SEC = 3600;
 let prevCpuTimes = null;
+const APP_ICON_PATH = path.join(__dirname, 'imgs', 'favicon.ico');
+
+if (process.platform === 'win32') {
+    app.setAppUserModelId('com.drowningincodes.bililive-notify');
+}
 
 function snapshotCpuTimes() {
     const cpus = os.cpus() || [];
@@ -352,7 +359,7 @@ function promptCloseAction() {
 }
 
 function handleMainWindowClose(event) {
-    if (isQuitting) {
+    if (isQuitting || isSwitchingToLogin) {
         return;
     }
 
@@ -378,7 +385,7 @@ function createMainWindow() {
         height: 800,
         minWidth: 800,
         minHeight: 800,
-        icon: path.join(__dirname, 'icon.ico'),
+        icon: APP_ICON_PATH,
         // frame: false,
         resizable: true,
         titleBarStyle: 'hidden',
@@ -410,7 +417,7 @@ function createLoginWindow() {
         height: 650,
         minWidth: 450,
         minHeight: 650,
-        icon: path.join(__dirname, 'icon.ico'),
+        icon: APP_ICON_PATH,
         // frame: false,
         titleBarStyle: 'hidden',
         // expose window controls in Windows/Linux
@@ -424,6 +431,9 @@ function createLoginWindow() {
     });
 
     loginWindow.loadFile('login.html');
+    if (process.platform === 'win32') {
+        loginWindow.setIcon(APP_ICON_PATH);
+    }
 
     if (isTestEnv) {
         loginWindow.webContents.openDevTools({ mode: 'detach' });
@@ -445,6 +455,8 @@ function createFollowListWindow() {
         height: 760,
         minWidth: 760,
         minHeight: 620,
+        icon: APP_ICON_PATH,
+        parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
         titleBarStyle: 'hidden',
         ...(process.platform !== 'darwin' ? { titleBarOverlay: true } : {}),
         webPreferences: {
@@ -455,6 +467,9 @@ function createFollowListWindow() {
     });
 
     followListWindow.loadFile('follow-list.html');
+    if (process.platform === 'win32') {
+        followListWindow.setIcon(APP_ICON_PATH);
+    }
 
     if (isTestEnv) {
         followListWindow.webContents.openDevTools({ mode: 'detach' });
@@ -462,6 +477,41 @@ function createFollowListWindow() {
 
     followListWindow.on('closed', function () {
         followListWindow = null;
+    });
+}
+
+function createSessdataGuideWindow() {
+    if (sessdataGuideWindow && !sessdataGuideWindow.isDestroyed()) {
+        sessdataGuideWindow.focus();
+        return;
+    }
+
+    sessdataGuideWindow = new BrowserWindow({
+        width: 520,
+        height: 620,
+        minWidth: 460,
+        minHeight: 520,
+        titleBarStyle: 'hidden',
+        ...(process.platform !== 'darwin' ? { titleBarOverlay: true } : {}),
+        icon: APP_ICON_PATH,
+        title: 'SESSDATA获取指南',
+        parent: loginWindow && !loginWindow.isDestroyed() ? loginWindow : undefined,
+        modal: false,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true
+        }
+    });
+
+    sessdataGuideWindow.loadFile('sessdata-guide.html');
+
+    if (isTestEnv) {
+        sessdataGuideWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+
+    sessdataGuideWindow.on('closed', function () {
+        sessdataGuideWindow = null;
     });
 }
 
@@ -674,7 +724,18 @@ function normalizeFollowMember(member) {
         liveUrl: member.live?.jump_url || ''
     };
 }
+function showNotification(options) {
+    if (!Notification.isSupported()) {
+        return;
+    }
 
+    new Notification({
+        title: '消息提醒',
+        body: '消息提醒',
+        icon: nativeImage.createFromPath(path.join(__dirname, 'public', 'notification.ico')),
+        ...(options || {})
+    }).show();
+}
 async function getGroupMembers(tagid, count, headers) {
     const pageSize = 50;
     const pageCount = Math.max(1, Math.ceil((count || 0) / pageSize));
@@ -886,6 +947,11 @@ ipcMain.on('login-success', () => {
     createMainWindow();
 });
 
+//消息提醒处理
+ipcMain.on('notification', (event, options) => {
+    showNotification(options);
+});
+
 // 窗口控制IPC处理
 ipcMain.on('minimize-window', () => {
     if (mainWindow) {
@@ -912,6 +978,42 @@ ipcMain.on('close-window', () => {
 ipcMain.on('close-login-window', () => {
     if (loginWindow) {
         loginWindow.close();
+    }
+});
+
+ipcMain.handle('logout', () => {
+    try {
+        if (fs.existsSync(cookiePath)) {
+            fs.unlinkSync(cookiePath);
+        }
+
+        if (fs.existsSync(apiCachePath)) {
+            fs.unlinkSync(apiCachePath);
+        }
+
+        if (followListWindow && !followListWindow.isDestroyed()) {
+            followListWindow.close();
+            followListWindow = null;
+        }
+
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            isSwitchingToLogin = true;
+            mainWindow.close();
+            mainWindow = null;
+            isSwitchingToLogin = false;
+        }
+
+        if (!loginWindow || loginWindow.isDestroyed()) {
+            createLoginWindow();
+        } else {
+            loginWindow.focus();
+        }
+
+        return { success: true };
+    } catch (error) {
+        isSwitchingToLogin = false;
+        console.error('退出登录失败:', error);
+        return { success: false, message: '退出登录失败' };
     }
 });
 
@@ -1174,6 +1276,10 @@ ipcMain.handle('get-live-following', async () => {
 
 ipcMain.on('open-follow-list-window', () => {
     createFollowListWindow();
+});
+
+ipcMain.on('open-sessdata-guide-window', () => {
+    createSessdataGuideWindow();
 });
 
 ipcMain.handle('get-monitor-list', async () => {

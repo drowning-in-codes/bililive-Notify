@@ -19,10 +19,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMonitorList: () => ipcRenderer.invoke('get-monitor-list'),
     addMonitorUser: (user) => ipcRenderer.invoke('add-monitor-user', user),
     removeMonitorUser: (mid) => ipcRenderer.invoke('remove-monitor-user', mid),
+    logout: () => ipcRenderer.invoke('logout'),
     loginSuccess: () => ipcRenderer.send('login-success'),
+    openSessdataGuideWindow: () => ipcRenderer.send('open-sessdata-guide-window'),
     minimizeWindow: () => ipcRenderer.send('minimize-window'),
     maximizeWindow: () => ipcRenderer.send('maximize-window'),
     closeWindow: () => ipcRenderer.send('close-window'),
     closeLoginWindow: () => ipcRenderer.send('close-login-window'),
-    getWindowSize: () => ipcRenderer.sendSync('get-window-size')
+    getWindowSize: () => ipcRenderer.sendSync('get-window-size'),
+    sendNotification: (options) => ipcRenderer.send('notification', options)
 });

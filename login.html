@@ -32,7 +32,17 @@
 
       <div id="sessdata-tab" class="tab-content">
         <div class="sessdata-container">
-          <label for="sessdata">SESSDATA</label>
+          <div class="sessdata-label-row">
+            <label for="sessdata">SESSDATA</label>
+            <button
+              id="sessdataHelpBtn"
+              class="sessdata-help-btn"
+              type="button"
+              title="用户登陆后,浏览器cookie中的SESSDATA值。"
+            >
+              ?
+            </button>
+          </div>
           <input type="text" id="sessdata" placeholder="请输入SESSDATA" />
           <button onclick="loginWithSESSDATA()">登录</button>
         </div>
@@ -170,12 +180,18 @@
         }
       }
 
+      function openSessdataGuideWindow() {
+        window.electronAPI.openSessdataGuideWindow();
+      }
+
       function closeWindow() {
         window.electronAPI.closeLoginWindow();
       }
 
       // 页面加载时生成二维码
       window.onload = function () {
+        const sessdataHelpBtn = document.getElementById("sessdataHelpBtn");
+        sessdataHelpBtn.addEventListener("click", openSessdataGuideWindow);
         generateQRCode();
       };
     </script>

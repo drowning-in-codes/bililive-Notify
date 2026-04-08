@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SESSDATA获取指南</title>
+    <link rel="stylesheet" href="./sessdata-guide.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>如何找到 SESSDATA</h1>
+      <p class="desc">
+        SESSDATA 是你登录 B 站后浏览器 Cookie
+        中的一个值。按照下面步骤即可找到并复制。
+      </p>
+
+      <div class="card">
+        <h2>Chrome / Edge 获取步骤</h2>
+        <ol class="steps">
+          <li>先在浏览器中登录 B 站账号。</li>
+          <li>按 <span class="key">F12</span> 打开开发者工具。</li>
+          <li>切换到 <span class="key">Application</span>（Edge 同名）。</li>
+          <li>
+            左侧打开 <span class="key">Storage > Cookies</span>，选择 b站域名。
+          </li>
+          <li>
+            在列表中找到 <span class="key">SESSDATA</span>，复制对应的 Value
+            值。
+          </li>
+          <li>回到登录窗口，粘贴到 SESSDATA 输入框并点击登录。</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h2>Firefox 获取步骤</h2>
+        <ol class="steps">
+          <li>登录 B 站后按 <span class="key">F12</span>。</li>
+          <li>打开 <span class="key">存储</span>（Storage）面板。</li>
+          <li>选择 <span class="key">Cookie</span>，找到 b站域名。</li>
+          <li>搜索并复制 <span class="key">SESSDATA</span> 的值。</li>
+        </ol>
+      </div>
+      <div class="help-image-wrap">
+        <img src="./public/help.png" class="help-image" alt="帮助" />
+      </div>
+      <p class="warn">
+        请勿将 SESSDATA
+        分享给他人。它等同于账号登录凭证，泄露后可能导致账号风险。
+      </p>
+    </div>
+  </body>
+</html>

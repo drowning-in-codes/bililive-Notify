@@ -123,11 +123,38 @@ h1 {
   margin: 20px 0;
 }
 
+.sessdata-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
 label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   font-weight: 500;
   color: #333;
+}
+
+.sessdata-help-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #91d5ff;
+  background-color: #e6f7ff;
+  color: #096dd9;
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 0;
+  padding: 0;
+  line-height: 1;
+  cursor: help;
+}
+
+.sessdata-help-btn:hover {
+  background-color: #bae7ff;
+  border-color: #69c0ff;
 }
 
 input {

@@ -1,18 +1,19 @@
+const path = require('path');
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 module.exports = {
   packagerConfig: {
     asar: true,
-    packagerConfig: {
-      icon: 'imgs/favicon' // no file extension required
-    }
+    // For Windows, electron-packager expects icon path without extension.
+    icon: path.join(__dirname, 'imgs', 'favicon')
   },
   rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
       config: {
+        setupIcon: path.join(__dirname, 'imgs', 'favicon.ico'),
       },
     },
     {

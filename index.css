@@ -221,6 +221,16 @@ h1 {
   font-weight: 600;
 }
 
+.user-panel-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.user-logout-btn {
+  margin-left: 0;
+}
+
 .user-profile-meta .value.vip-name {
   color: #fb4a70;
 }

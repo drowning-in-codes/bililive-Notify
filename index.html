@@ -69,6 +69,15 @@
               <span class="label">硬币数</span>
               <span class="value" id="userCoins">加载中...</span>
             </div>
+            <div class="user-panel-actions">
+              <button
+                id="accountLogoutBtn"
+                class="btn btn-secondary user-logout-btn"
+                type="button"
+              >
+                退出登录
+              </button>
+            </div>
           </div>
         </div>
 
@@ -268,22 +277,30 @@
       }
 
       function showLiveNotification(user) {
-        if (typeof Notification === "undefined") {
+        const title = `${user.name || "用户"}正在直播`;
+        const body = user.liveTitle ? `${user.liveTitle}` : "直播已开始";
+
+        if (typeof Notification !== "undefined") {
+          const notification = new Notification(title, {
+            body,
+            icon: user.avatar || undefined,
+          });
+
+          notification.onclick = () => {
+            if (user.liveRoomUrl) {
+              window.open(user.liveRoomUrl, "_blank", "noopener,noreferrer");
+            }
+          };
           return;
         }
 
-        const title = `${user.name || "用户"}正在直播`;
-        const body = user.liveTitle ? `${user.liveTitle}` : "直播已开始";
-        const notification = new Notification(title, {
-          body,
-          icon: user.avatar || undefined,
-        });
-
-        notification.onclick = () => {
-          if (user.liveRoomUrl) {
-            window.open(user.liveRoomUrl, "_blank", "noopener,noreferrer");
-          }
-        };
+        if (window.electronAPI?.sendNotification) {
+          window.electronAPI.sendNotification({
+            title,
+            body,
+            icon: user.avatar || undefined,
+          });
+        }
       }
 
       function renderMonitorList(list, liveStateMap = new Map()) {
@@ -649,9 +666,17 @@
         }
       }
 
-      function logout() {
+      async function logout() {
         if (confirm("确定要退出登录吗？")) {
-          window.location.href = "login.html";
+          try {
+            const result = await window.electronAPI.logout();
+            if (!result.success) {
+              alert(result.message || "退出登录失败");
+            }
+          } catch (error) {
+            console.error("退出登录失败:", error);
+            alert("退出登录失败");
+          }
         }
       }
 
@@ -711,6 +736,7 @@
         );
         const monitorListEl = document.getElementById("monitorList");
         const openFollowListBtn = document.getElementById("openFollowListBtn");
+        const accountLogoutBtn = document.getElementById("accountLogoutBtn");
         const toggleSystemMetricsBtn = document.getElementById(
           "toggleSystemMetricsBtn",
         );
@@ -736,6 +762,7 @@
         openFollowListBtn.addEventListener("click", () => {
           window.electronAPI.openFollowListWindow();
         });
+        accountLogoutBtn.addEventListener("click", logout);
         toggleSystemMetricsBtn.addEventListener(
           "click",
           toggleSystemMetricsVisible,
