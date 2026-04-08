@@ -115,6 +115,33 @@ We welcome improvements and pull requests. Please keep these guidelines in mind:
 - Avoid documenting unverified API behavior
 - Include change summary, validation steps, and potential impact in PR descriptions
 
+## TODO
+
+以下事项用于跟踪可迭代的功能与性能优化，使用复选框标记完成状态。
+
+Feature Improvements
+
+- [x] SESSDATA 获取指引弹窗（登录页问号按钮 + 说明窗口）
+- [ ] 支持一键从浏览器导入 Cookie（降低手动复制 SESSDATA 成本）
+- [ ] 监听列表分组与标签管理（按类别/优先级组织）
+- [ ] 开播通知增强：自定义声音、频率限制、免打扰时段
+- [ ] 通知历史记录页（查看最近开播提醒与点击跳转记录）
+- [ ] 启动时自动恢复上次打开的子窗口（关注列表/帮助页）
+
+Performance Improvements
+
+- [ ] API 缓存分层与按接口细粒度过期策略（进一步减少重复请求）
+- [ ] 并发请求限流与队列调度（避免短时请求峰值）
+- [ ] 监听列表渲染优化（大列表场景下虚拟滚动/增量渲染）
+- [ ] 轮询改造为可见性感知策略（窗口隐藏时降低轮询频率）
+- [ ] 监控性能指标面板扩展（请求耗时、失败率、缓存命中率）
+- [ ] 关键路径日志分级与采样（降低高频日志对 I/O 的影响）
+
+Notes
+
+- `[x]` 表示已完成并合入主分支
+- `[ ]` 表示待完成或进行中
+
 ## License
 
 ISC
