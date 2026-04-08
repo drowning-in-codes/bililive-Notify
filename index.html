@@ -362,7 +362,7 @@
         const safeAvatar =
           user.avatar || "https://static.hdslb.com/images/member/noface.gif";
         const isMonitored = Boolean(user.monitored);
-        const actionText = isMonitored ? "已添加" : "未添加";
+        const actionText = isMonitored ? "已添加" : "添加";
         const levelText = user.level ?? "-";
 
         li.innerHTML = `
@@ -611,9 +611,10 @@
 
           const nextMonitored = !isMonitored;
           btn.dataset.monitored = nextMonitored ? "1" : "0";
-          btn.textContent = nextMonitored ? "已添加" : "未添加";
+          btn.textContent = nextMonitored ? "已添加" : "添加";
           btn.classList.toggle("added", nextMonitored);
           btn.classList.toggle("primary", !nextMonitored);
+          btn.disabled = false;
           statusEl.textContent = nextMonitored
             ? `已添加监听: ${payload.mid}`
             : `已取消监听: ${payload.mid}`;
