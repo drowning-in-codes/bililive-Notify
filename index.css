@@ -14,7 +14,7 @@ body {
 
 .system-metrics {
   position: absolute;
-  top: 14px;
+  top: 82px;
   right: 24px;
   z-index: 20;
   display: inline-flex;
@@ -633,7 +633,7 @@ h1 {
 
 @media (max-width: 980px) {
   .system-metrics {
-    top: 10px;
+    top: 76px;
     right: 12px;
     font-size: 11px;
     padding: 6px 10px;
